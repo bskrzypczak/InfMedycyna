@@ -8,6 +8,7 @@ from skimage.color import gray2rgb, rgb2gray
 from skimage.draw import line_nd
 import scipy.fftpack
 import os
+from PIL import Image, ImageDraw, ImageFont
 
 def wczytaj_obraz(sciezka):
     if sciezka.lower().endswith(".dcm"):
@@ -136,6 +137,49 @@ def zapisz_dicom_obraz(obraz, sciezka_wyj):
     print(f"Plik DICOM (rekonstrukcja) zapisany: {sciezka_wyj}")
     return
 
+
+def modify_dicom(input_filename, output_filename, reconstructed_image):
+    # Wczytanie pliku DICOM
+    ds = pydicom.dcmread(input_filename)
+
+    # Zmiana danych pacjenta w metadanych
+    ds.PatientName = "Jan Kowalski"
+    ds.PatientID = "123456789"
+    ds.PatientSex = "M"  # Zmieniamy na Mężczyzna
+    ds.PatientBirthDate = "19850101"  # Ustawiamy datę urodzenia
+
+    # Zmiana daty badania (StudyDate)
+    ds.StudyDate = datetime.today().strftime('%Y%m%d')  # Dzisiejsza data w formacie YYYYMMDD
+
+    # Dodanie komentarza
+    ds.Comments = "Badanie kontrolne. Proszę o dalsze obserwacje."
+
+    # Zmieniamy rekonstruowany obraz na typ uint8 (od 0 do 255) dla DICOM
+    reconstructed_image = (reconstructed_image * 255).astype(np.uint8)
+
+    # Tworzymy obraz z rekonstrukcji
+    new_image = Image.fromarray(reconstructed_image)
+    
+    # Zmiana metadanych, aby wskazywały nowy rozmiar obrazu
+    ds.Rows, ds.Columns = new_image.size
+    ds.PixelData = np.array(new_image).tobytes()  # Zapisz obraz jako dane pikseli
+
+    # Dodanie tekstu do obrazu
+    draw = ImageDraw.Draw(new_image)
+    font = ImageFont.load_default()
+    text_y_position = 20  # Zmieniamy pozycję tekstu, żeby było niżej
+
+    draw.text((10, text_y_position), f"Pacjent: {ds.PatientName}", fill="white", font=font)
+    draw.text((10, text_y_position + 20), f"Data badania: {ds.StudyDate}", fill="white", font=font)
+    draw.text((10, text_y_position + 40), f"Komentarz: {ds.Comments}", fill="white", font=font)
+
+    # Zaktualizowanie obrazu z tekstem w pliku DICOM
+    ds.PixelData = np.array(new_image).tobytes()
+
+    # Zapisanie zmodyfikowanego pliku DICOM
+    ds.save_as(output_filename)
+    print(f"Plik zapisany jako: {output_filename}")
+
 # Wczytanie obrazu
 droga_do_pliku = "shepp_logan.dcm"  # lub np. 'obrazy/test.png'
 obraz, dicom_metadata = wczytaj_obraz(droga_do_pliku)
@@ -154,13 +198,11 @@ wyswietl_sinogram(projekcje)
 
 rekonstruowany_obraz = rekonstrukcja_wlasna(projekcje, liczba_katow=liczba_katow, rozmiar_obrazka=liczba_emiterow)
 
-
-
 # Wyświetlenie rekonstrukcji
 plt.imshow(rekonstruowany_obraz, cmap='gray')
 plt.title("Obraz po rekonstrukcji (FBP)")
 plt.axis('off')
 plt.show()
 
-# Zapis obrazu po rekonstrukcji jako DICOM
-zapisz_dicom_obraz(rekonstruowany_obraz, "rekonstrukcja_output.dcm")
+
+modify_dicom(droga_do_pliku, "dzialaj.dcm", rekonstruowany_obraz)
