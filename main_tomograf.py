@@ -136,31 +136,31 @@ def zapisz_dicom_obraz(obraz, sciezka_wyj):
     print(f"Plik DICOM (rekonstrukcja) zapisany: {sciezka_wyj}")
     return
 
-# Wczytanie obrazu
-droga_do_pliku = "shepp_logan.dcm"  # lub np. 'obrazy/test.png'
-obraz, dicom_metadata = wczytaj_obraz(droga_do_pliku)
-
-# Liczba emiterów = liczba detektorów
-liczba_katow = 180
-liczba_emiterow = 256  # Możesz też dać: liczba_emiterow = max(obraz.shape)
-
-# Generowanie projekcji (sinogramu)
-projekcje = generuj_projekcje(obraz, liczba_katow=liczba_katow, liczba_emiterow=liczba_emiterow)
-
-# Wyświetlenie sinogramu
-wyswietl_sinogram(projekcje)
-
-# Rekonstrukcja obrazu z sinogramu (FBP)
-
-rekonstruowany_obraz = rekonstrukcja_wlasna(projekcje, liczba_katow=liczba_katow, rozmiar_obrazka=liczba_emiterow)
-
-
-
-# Wyświetlenie rekonstrukcji
-plt.imshow(rekonstruowany_obraz, cmap='gray')
-plt.title("Obraz po rekonstrukcji (FBP)")
-plt.axis('off')
-plt.show()
-
-# Zapis obrazu po rekonstrukcji jako DICOM
-zapisz_dicom_obraz(rekonstruowany_obraz, "rekonstrukcja_output.dcm")
+# # Wczytanie obrazu
+# droga_do_pliku = "shepp_logan.dcm"  # lub np. 'obrazy/test.png'
+# obraz, dicom_metadata = wczytaj_obraz(droga_do_pliku)
+#
+# # Liczba emiterów = liczba detektorów
+# liczba_katow = 180
+# liczba_emiterow = 256  # Możesz też dać: liczba_emiterow = max(obraz.shape)
+#
+# # Generowanie projekcji (sinogramu)
+# projekcje = generuj_projekcje(obraz, liczba_katow=liczba_katow, liczba_emiterow=liczba_emiterow)
+#
+# # Wyświetlenie sinogramu
+# wyswietl_sinogram(projekcje)
+#
+# # Rekonstrukcja obrazu z sinogramu (FBP)
+#
+# rekonstruowany_obraz = rekonstrukcja_wlasna(projekcje, liczba_katow=liczba_katow, rozmiar_obrazka=liczba_emiterow)
+#
+#
+#
+# # Wyświetlenie rekonstrukcji
+# plt.imshow(rekonstruowany_obraz, cmap='gray')
+# plt.title("Obraz po rekonstrukcji (FBP)")
+# plt.axis('off')
+# plt.show()
+#
+# # Zapis obrazu po rekonstrukcji jako DICOM
+# zapisz_dicom_obraz(rekonstruowany_obraz, "rekonstrukcja_output.dcm")
