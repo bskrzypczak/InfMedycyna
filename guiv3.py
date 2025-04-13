@@ -1,13 +1,13 @@
 import sys
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QCheckBox, QLabel, QFrame, QFileDialog, QSpinBox, QMessageBox
+    QPushButton, QCheckBox, QLabel, QFrame, QFileDialog, QSpinBox, QMessageBox, QInputDialog
 
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap, QImage, qRgb
 from PyQt6.QtWidgets import QDialog, QFormLayout, QLineEdit, QDialogButtonBox
-from funkcje import wczytaj_obraz, generuj_projekcje,rekonstrukcja_wlasna
+from funkcje import wczytaj_obraz, generuj_projekcje,rekonstrukcja_wlasna,save_dicom_image
 import numpy as np
 
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
@@ -173,6 +173,49 @@ def rekonstruuj_obraz():
         layout.addWidget(label)
 
         print("Obraz zrekonstruowany i wyświetlony.")
+    except Exception as e:
+        print(f"Blad przy rekonstrukcji obrazu: {e}")
+        QMessageBox.critical(None, "Błąd", "Wystąpił błąd podczas rekonstrukcji obrazu.")
+
+def save_dicom_file():
+    global sinogram, obraz, imie, nazwisko, pesel, komentarz  # Pobierz dane pacjenta z globalnych zmiennych
+
+    if sinogram is None or len(sinogram) == 0:
+        QMessageBox.warning(None, "Błąd", "Sinogram nie został wygenerowany. Najpierw wczytaj obraz i wygeneruj sinogram.")
+        return
+
+    if obraz is None or obraz.size == 0:
+        QMessageBox.warning(None, "Błąd", "Obraz nie został wczytany poprawnie. Wczytaj obraz przed rekonstrukcją.")
+        return
+
+    try:
+        print("Rekonstrukcja obrazu...")
+        # Rekonstrukcja obrazu na podstawie sinogramu
+        reconstructed = rekonstrukcja_wlasna(sinogram, liczba_katow=180, l_em=180)
+
+        # Otwórz okno dialogowe do zapisania pliku DICOM
+        filename, _ = QFileDialog.getSaveFileName(None, "Zapisz plik DICOM", "", "DICOM files (*.dcm)")
+        if not filename:
+            return
+
+        # Pobierz dane pacjenta z globalnych zmiennych
+        patientname = f"{imie} {nazwisko}"  # Połącz imię i nazwisko pacjenta
+        patientID = pesel  # Pobierz PESEL pacjenta z globalnych zmiennych
+        patient_comments = komentarz  # Pobierz komentarz pacjenta z globalnych zmiennych
+
+        if not patientname or not patientID:
+            QMessageBox.warning(None, "Błąd", "Dane pacjenta muszą być wprowadzone.")
+            return
+
+        # Zapisz obraz w pliku DICOM z wszystkimi danymi
+        saved_filename = save_dicom_image(reconstructed, filename, patientname, patientID, patient_comments)
+
+        if saved_filename:
+            QMessageBox.information(None, "DICOM", f"Plik DICOM został zapisany jako:\n{saved_filename}")
+        else:
+            QMessageBox.critical(None, "Błąd", "Nie udało się zapisać pliku DICOM.")
+
+        print("Obraz zrekonstruowany i zapisany jako DICOM.")
     except Exception as e:
         print(f"Blad przy rekonstrukcji obrazu: {e}")
         QMessageBox.critical(None, "Błąd", "Wystąpił błąd podczas rekonstrukcji obrazu.")
@@ -427,18 +470,18 @@ QPushButton:hover {
     # Przycisk "Zapisz plik DICOM"
     btn_zapisz_dicom = QPushButton("Zapisz plik DICOM")
     btn_zapisz_dicom.setStyleSheet("""
-QPushButton {
-    font-size: 16px;
-    background-color: #007BFF;
-    color: white;
-    border-radius: 10px;
-    padding: 5px;
-}
-QPushButton:hover {
-    background-color: #168FFF;
-}
-""")
-    btn_zapisz_dicom.clicked.connect(lambda: print("Kliknięto 'Zapisz plik DICOM'"))
+    QPushButton {
+        font-size: 16px;
+        background-color: #007BFF;
+        color: white;
+        border-radius: 10px;
+        padding: 5px;
+    }
+    QPushButton:hover {
+        background-color: #168FFF;
+    }
+    """)
+    btn_zapisz_dicom.clicked.connect(save_dicom_file)  # Wywołanie funkcji zapisu DICOM
     top_buttons_layout.addWidget(btn_zapisz_dicom)
     layout.addLayout(top_buttons_layout)
 

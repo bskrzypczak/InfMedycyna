@@ -5,6 +5,8 @@ import pydicom
 from imageio import imread
 from skimage.color import rgb2gray, gray2rgb
 from skimage.draw import line_nd
+from pydicom.dataset import Dataset, FileDataset
+import datetime
 
 def wczytaj_obraz(sciezka):
     """
@@ -85,3 +87,56 @@ def rekonstrukcja_wlasna(sinogram, liczba_katow=180, l_em=180):
     # Normalizacja
     reconstructed = (reconstructed - reconstructed.min()) / (reconstructed.max() - reconstructed.min())
     return reconstructed
+
+def save_dicom_image(reconstructed_array, filename, patientname, patientID, patient_comments=None):
+    """
+    Funkcja zapisuje zrekonstruowany obraz jako plik DICOM.
+    - reconstructed_array: zrekonstruowany obraz do zapisu.
+    - filename: Ścieżka, w której zapisany zostanie plik DICOM.
+    - patientname: Imię pacjenta.
+    - patientID: ID pacjenta.
+    - patient_comments: Komentarz pacjenta (opcjonalne).
+    """
+    if reconstructed_array is None:
+        return None
+
+    # Tworzymy metadane DICOM
+    file_meta = pydicom.Dataset()
+    file_meta.MediaStorageSOPClassUID = pydicom.uid.SecondaryCaptureImageStorage
+    file_meta.MediaStorageSOPInstanceUID = pydicom.uid.generate_uid()
+    file_meta.ImplementationClassUID = pydicom.uid.PYDICOM_IMPLEMENTATION_UID
+
+    ds = FileDataset(filename, {}, file_meta=file_meta, preamble=b"\0" * 128)
+    dt = datetime.datetime.now()
+    ds.ContentDate = dt.strftime("%Y%m%d")
+    ds.ContentTime = dt.strftime("%H%M%S")
+    ds.Modality = "OT"  # Other (obraz medyczny "inny")
+    ds.PatientName = patientname
+    ds.PatientID = patientID
+    ds.StudyInstanceUID = pydicom.uid.generate_uid()
+    ds.SeriesInstanceUID = pydicom.uid.generate_uid()
+    ds.SOPInstanceUID = file_meta.MediaStorageSOPInstanceUID
+    ds.SOPClassUID = file_meta.MediaStorageSOPClassUID
+
+    # Jeśli komentarz pacjenta jest dostępny, dodajemy go do metadanych DICOM
+    if patient_comments:
+        ds.PatientComments = patient_comments
+
+    # Normalizacja i konwersja obrazu do uint8
+    image_array = (reconstructed_array - reconstructed_array.min()) / \
+                  (reconstructed_array.max() - reconstructed_array.min()) * 255
+    image_array = image_array.astype(np.uint8)
+
+    # Ustawienia dla obrazu
+    ds.Rows, ds.Columns = image_array.shape
+    ds.PhotometricInterpretation = "MONOCHROME2"
+    ds.SamplesPerPixel = 1
+    ds.BitsAllocated = 8
+    ds.BitsStored = 8
+    ds.HighBit = 7
+    ds.PixelRepresentation = 0
+    ds.PixelData = image_array.tobytes()
+
+    # Zapisz plik DICOM
+    ds.save_as(filename, write_like_original=False)
+    return filename
