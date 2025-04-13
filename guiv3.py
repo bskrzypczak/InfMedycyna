@@ -1,10 +1,12 @@
 import sys
+import time
+
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QCheckBox, QLabel, QFrame, QFileDialog, QSpinBox, QMessageBox, QInputDialog
 
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QPixmap, QImage, qRgb
 from PyQt6.QtWidgets import QDialog, QFormLayout, QLineEdit, QDialogButtonBox
 from funkcje import wczytaj_obraz, generuj_projekcje,rekonstrukcja_wlasna,save_dicom_image
@@ -77,55 +79,62 @@ def wczytaj_i_pokaz_obraz():
             print("Błąd podczas wczytywania obrazu")
             QMessageBox.critical(None, "Błąd", "Nie udało się wczytać obrazu.")
 
+
 def generuj_sinogram():
-    global obraz, sinogram, krok_alpha, liczba_detektorow, rozpietosc  # Pobieramy te dane globalnie
+    global obraz, sinogram, krok_alpha, liczba_detektorow, rozpietosc, chk_animacja
 
     if obraz is not None:
         try:
-            print(f"Generowanie sinogramu: krok α = {krok_alpha}, liczba detektorów = {liczba_detektorow}, rozpiętość = {rozpietosc}")
-            # Generowanie sinogramu z funkcji 'generuj_projekcje'
+            # Generowanie sinogramu
             projekcje = generuj_projekcje(obraz, krok_alpha=krok_alpha, liczba_emiterow=liczba_detektorow)
-
-            # Sprawdźmy wynik
-            print(f"Sinogram: {len(projekcje)} projekcji")
-
-            # Konwertowanie sinogramu na obraz w formacie QPixmap
             sinogram = np.array(projekcje)
-
-            # Normalizacja sinogramu, aby wartości były w zakresie [0, 1] i potem na [0, 255]
-            sinogram_normalized = np.clip(sinogram, 0, np.max(sinogram))  # Zmiana zakresu
+            sinogram_normalized = np.clip(sinogram, 0, np.max(sinogram))
             sinogram_normalized = (sinogram_normalized / np.max(sinogram_normalized) * 255).astype(np.uint8)
 
-            # Konwertowanie sinogramu na QImage w formacie szaro-skalowym
-            height, width = sinogram_normalized.shape
-            bytes_per_line = width
+            layout = frames[1].layout()  # Layout, w którym wyświetlamy sinogram
 
-            # Tworzymy QImage z odpowiednim formatem
-            q_image = QImage(sinogram_normalized.data, width, height, bytes_per_line, QImage.Format.Format_Grayscale8)
-            sinogram_pixmap = QPixmap.fromImage(q_image)
-
-            # Wyświetlanie sinogramu w drugiej ramce
-            layout = frames[1].layout()  # Ramka numer 2
+            # Sprawdzamy, czy layout jest zainicjowany. Jeśli nie, tworzymy nowy.
             if layout is None:
                 layout = QVBoxLayout()
                 frames[1].setLayout(layout)
 
-            for i in reversed(range(layout.count())):
-                widget = layout.itemAt(i).widget()
-                if widget is not None:
-                    widget.deleteLater()
+            # Jeśli animacja włączona, generujemy klatki iteracyjnie
+            if chk_animacja.isChecked():
+                # Tworzymy QLabel, który będziemy aktualizować w każdej iteracji
+                label = QLabel()
+                label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                layout.addWidget(label)
 
-            label = QLabel()
-            label.setPixmap(sinogram_pixmap)
-            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            layout.addWidget(label)
+                for i in range(len(sinogram_normalized)):
+                    current_sinogram = sinogram_normalized[:i+1]
+                    q_image = QImage(current_sinogram.data, current_sinogram.shape[1], current_sinogram.shape[0], current_sinogram.shape[1], QImage.Format.Format_Grayscale8)
+                    sinogram_pixmap = QPixmap.fromImage(q_image)
 
-            print("Sinogram wyświetlony.")
+                    # Aktualizowanie QLabel (nie tworzymy nowego widgetu, tylko zmieniamy zawartość)
+                    label.setPixmap(sinogram_pixmap)
+
+                    # Zmieniamy widok z opóźnieniem, aby uzyskać efekt animacji
+                    QApplication.processEvents()
+                    time.sleep(0.05)  # Przerwa, aby animacja była widoczna
+            else:
+                # Jeśli animacja jest wyłączona, wyświetlamy pełny sinogram na raz
+                q_image = QImage(sinogram_normalized.data, sinogram_normalized.shape[1], sinogram_normalized.shape[0], sinogram_normalized.shape[1], QImage.Format.Format_Grayscale8)
+                sinogram_pixmap = QPixmap.fromImage(q_image)
+
+                # Sprawdzamy, czy istnieje QLabel. Jeśli nie, tworzymy nowy.
+                if not hasattr(generuj_sinogram, 'label'):
+                    label = QLabel()
+                    label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                    layout.addWidget(label)
+
+                label.setPixmap(sinogram_pixmap)
+
         except Exception as e:
             print(f"Blad przy generowaniu sinogramu: {e}")
             QMessageBox.critical(None, "Błąd", "Wystąpił błąd podczas generowania sinogramu.")
     else:
         QMessageBox.warning(None, "Błąd", "Najpierw wczytaj obraz przed generowaniem sinogramu.")
+
 
 
 def rekonstruuj_obraz():
@@ -394,9 +403,10 @@ krok_alpha = 1
 liczba_detektorow = 256
 rozpietosc = 180
 
+chk_animacja = None
 def main():
     global patient_labels,tomograph_labels
-    global frames
+    global frames,chk_animacja
 
 
     app = QApplication(sys.argv)
@@ -505,17 +515,17 @@ QPushButton:hover {
     # Checkbox "Pokaż animację skanowania iteracyjnie"
     chk_animacja = QCheckBox("Pokaż animację skanowania iteracyjnie")
     chk_animacja.setStyleSheet("""
-QCheckBox {
-    font-size: 16px;
-    color: white;
-    padding: 5px;
-}
-QCheckBox::indicator {
-    width: 20px;
-    height: 20px;
-}
-""")
-    chk_animacja.clicked.connect(lambda checked: print(f"Checkbox animacji: {checked}"))
+    QCheckBox {
+        font-size: 16px;
+        color: white;
+        padding: 5px;
+    }
+    QCheckBox::indicator {
+        width: 20px;
+        height: 20px;
+    }
+    """)
+    chk_animacja.clicked.connect(lambda checked: None)  # Checkbox nie generuje sinogramu, tylko wybiera animację
     layout.addWidget(chk_animacja, alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
 
     # Linia pod checkboxem
