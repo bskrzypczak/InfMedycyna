@@ -78,13 +78,13 @@ def wczytaj_i_pokaz_obraz():
             QMessageBox.critical(None, "Błąd", "Nie udało się wczytać obrazu.")
 
 def generuj_sinogram():
-    global obraz, sinogram  # Używamy wczytanego obrazu do generowania sinogramu
+    global obraz, sinogram, krok_alpha, liczba_detektorow, rozpietosc  # Pobieramy te dane globalnie
 
     if obraz is not None:
         try:
-            print("Generowanie sinogramu...")
+            print(f"Generowanie sinogramu: krok α = {krok_alpha}, liczba detektorów = {liczba_detektorow}, rozpiętość = {rozpietosc}")
             # Generowanie sinogramu z funkcji 'generuj_projekcje'
-            projekcje = generuj_projekcje(obraz)
+            projekcje = generuj_projekcje(obraz, krok_alpha=krok_alpha, liczba_emiterow=liczba_detektorow)
 
             # Sprawdźmy wynik
             print(f"Sinogram: {len(projekcje)} projekcji")
@@ -127,12 +127,14 @@ def generuj_sinogram():
     else:
         QMessageBox.warning(None, "Błąd", "Najpierw wczytaj obraz przed generowaniem sinogramu.")
 
+
 def rekonstruuj_obraz():
-    global sinogram, obraz  # Sinogram i obraz muszą być globalnie dostępne
+    global sinogram, obraz, krok_alpha, liczba_detektorow, rozpietosc  # Pobieramy te dane globalnie
 
     # Sprawdzamy, czy sinogram i obraz nie są puste
     if sinogram is None or len(sinogram) == 0:
-        QMessageBox.warning(None, "Błąd", "Sinogram nie został wygenerowany. Najpierw wczytaj obraz i wygeneruj sinogram.")
+        QMessageBox.warning(None, "Błąd",
+                            "Sinogram nie został wygenerowany. Najpierw wczytaj obraz i wygeneruj sinogram.")
         return
 
     if obraz is None or obraz.size == 0:
@@ -140,9 +142,15 @@ def rekonstruuj_obraz():
         return
 
     try:
-        print("Rekonstrukcja obrazu...")
+        print(
+            f"Rekonstrukcja obrazu: krok α = {krok_alpha}, liczba detektorów = {liczba_detektorow}, rozpiętość = {rozpietosc}")
+
+        # Zmieniamy liczba_katow i l_em, aby były zgodne z rzeczywistymi danymi
+        liczba_katow = int(180 / krok_alpha)
+        l_em = obraz.shape[0]  # Rozmiar obrazu z wejściowego obrazu (najczęściej jest to kwadratowy obraz)
+
         # Rekonstrukcja obrazu na podstawie sinogramu
-        reconstructed = rekonstrukcja_wlasna(sinogram, liczba_katow=180, l_em=180)
+        reconstructed = rekonstrukcja_wlasna(sinogram, liczba_katow=liczba_katow, l_em=l_em)
 
         # Konwersja rekonstrukcji na obraz do wyświetlenia
         reconstructed = (reconstructed * 255).astype(np.uint8)
@@ -152,8 +160,17 @@ def rekonstruuj_obraz():
         # Wyświetlanie zrekonstruowanego obrazu w trzeciej ramce
         height, width = reconstructed.shape
         bytes_per_line = width
+
+        # Tworzymy QImage z obrazu
         q_image = QImage(reconstructed.data, width, height, bytes_per_line, QImage.Format.Format_Grayscale8)
         pixmap = QPixmap.fromImage(q_image)
+
+        # Uzyskanie wymiarów ramki, do której ma zostać dodany obraz
+        frame_width = frames[2].width()
+        frame_height = frames[2].height()
+
+        # Skalowanie pixmapy do wymiarów ramki, zachowując proporcje
+        pixmap = pixmap.scaled(frame_width, frame_height, Qt.AspectRatioMode.KeepAspectRatio)
 
         # Wyświetlanie obrazu w ramce
         layout = frames[2].layout()  # Ramka numer 3
@@ -303,11 +320,11 @@ def pokaz_okno_ustawien_tomografu():
 
     liczba_detektorow = QSpinBox()
     liczba_detektorow.setRange(10, 1000)
-    liczba_detektorow.setValue(180)
+    liczba_detektorow.setValue(256)
 
     rozpietosc = QSpinBox()
     rozpietosc.setRange(1, 360)
-    rozpietosc.setValue(120)
+    rozpietosc.setValue(180)
 
     # Dodanie do layoutu
     layout.addRow("Krok Δα:", krok_alpha)
@@ -373,7 +390,7 @@ patient_labels = {}
 tomograph_labels ={}
 
 #ustawienia tomografu
-krok_alpha = 10
+krok_alpha = 1
 liczba_detektorow = 256
 rozpietosc = 180
 
