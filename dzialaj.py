@@ -4,44 +4,42 @@ import numpy as np
 from scipy.signal import convolve2d
 from PIL import Image
 import matplotlib.pyplot as plt
+import pydicom
 
 
-def load_image(file_path, target_size=(256, 256)):
-    img = Image.open(file_path).convert('L')
-    img = img.resize(target_size, Image.Resampling.LANCZOS)
-    return np.array(img) / 255.0
+def wczytanie_obrazu(sciezka_pliku, rozmiar_obrazu=(256, 256)):
+    if sciezka_pliku.lower().endswith(".dcm"):
+        dane_dicom = pydicom.dcmread(sciezka_pliku)
+        obraz = dane_dicom.pixel_array.astype(np.float32)
+        obraz = (obraz - obraz.min()) / (obraz.max() - obraz.min())  # Normalizacja do [0,1]
+        return obraz, dane_dicom
+    else:
+        obraz = Image.open(sciezka_pliku).convert('L')
+        obraz = obraz.resize(rozmiar_obrazu, Image.Resampling.LANCZOS)
+        return np.array(obraz) / 255.0, None
 
 
-def get_parallel_rays(radius, pos, angle, span, num_rays):
-    alpha = np.radians(angle)
-    theta = np.radians(span)
-    ray_indices = np.linspace(0, num_rays - 1, num_rays)
-    detector_angles = alpha - (ray_indices * theta / (num_rays - 1)) + theta / 2
-    emitter_angles = alpha + np.pi - (theta / 2) + (ray_indices * theta / (num_rays - 1))
-    x_e = radius * np.cos(emitter_angles) + pos[0]
-    y_e = radius * np.sin(emitter_angles) + pos[1]
-    x_d = radius * np.cos(detector_angles) + pos[0]
-    y_d = radius * np.sin(detector_angles) + pos[1]
-    rays = np.empty((num_rays, 2, 2))
-    rays[:, 0, 0] = x_e
-    rays[:, 0, 1] = x_d
-    rays[:, 1, 0] = y_e
-    rays[:, 1, 1] = y_d
-    return rays
 
 
-def get_bresenham_points(x0, y0, x1, y1):
-    points = []
+def algorytm_bresenhama(x0, x1, y0, y1):
+    punkty = []
     dx = abs(x1 - x0)
     dy = abs(y1 - y0)
     x, y = int(x0), int(y0)
-    sx = -1 if x0 > x1 else 1
-    sy = -1 if y0 > y1 else 1
+
+    if x0 > x1:
+        sx = -1
+    else:
+        sx = 1
+    if y0 > y1:
+        sy = -1
+    else:
+        sy = 1   
 
     if dx > dy:
         err = dx / 2.0
         while x != int(x1):
-            points.append((x, y))
+            punkty.append((x, y))
             err -= dy
             if err < 0:
                 y += sy
@@ -50,119 +48,149 @@ def get_bresenham_points(x0, y0, x1, y1):
     else:
         err = dy / 2.0
         while y != int(y1):
-            points.append((x, y))
+            punkty.append((x, y))
             err -= dx
             if err < 0:
                 x += sx
                 err += dy
             y += sy
-    points.append((int(x1), int(y1)))
-    return points
+    punkty.append((int(x1), int(y1)))
+    return punkty
 
 
-def calculate_sinogram(img, steps, span, num_rays, max_angle):
-    sinogram = np.zeros((steps, num_rays))
-    for idx in range(steps):
-        angle = idx * (max_angle / steps)
-        rays = get_parallel_rays(max(img.shape[0] // 2, img.shape[1] // 2) * np.sqrt(2),
-                                 (img.shape[0] // 2, img.shape[1] // 2), angle, span, num_rays)
-        for ray_idx, ray in enumerate(rays):
-            points = get_bresenham_points(ray[0][0], ray[1][0], ray[0][1], ray[1][1])
-            sinogram[idx][ray_idx] = sum(img[p[1], p[0]] for p in points if 0 <= p[0] < img.shape[1] and 0 <= p[1] < img.shape[0])
+
+def wyznaczenie_promieni(r, pozycja, kat, rozpietosc, liczba_promieni):
+    alfa = np.radians(kat)
+    theta = np.radians(rozpietosc)
+    indeksy_promieni = np.linspace(0, liczba_promieni - 1, liczba_promieni)
+    detektor = alfa - (indeksy_promieni * theta / (liczba_promieni - 1)) + theta / 2
+    emiter = alfa + np.pi - (theta / 2) + (indeksy_promieni * theta / (liczba_promieni - 1))
+
+    x_e = r * np.cos(emiter) + pozycja[0]
+    y_e = r * np.sin(emiter) + pozycja[1]
+    x_d = r * np.cos(detektor) + pozycja[0]
+    y_d = r * np.sin(detektor) + pozycja[1]
+
+    promienie = np.empty((liczba_promieni, 2, 2))
+    promienie[:, 0, 0] = x_e
+    promienie[:, 0, 1] = x_d
+    promienie[:, 1, 0] = y_e
+    promienie[:, 1, 1] = y_d
+
+    return promienie
+
+
+
+def tworzenie_sinogramu(obraz, kroki, rozpietosc, liczba_promieni, max_kat):
+    sinogram = np.zeros((kroki, liczba_promieni))
+    
+    for idx in range(kroki):
+        kat = idx * (max_kat / kroki)
+        promienie = wyznaczenie_promieni(
+            np.hypot(obraz.shape[0] // 2, obraz.shape[1] // 2),
+            (obraz.shape[0] // 2, obraz.shape[1] // 2), kat, rozpietosc, liczba_promieni)
+        
+        for promien_idx, promien in enumerate(promienie):
+            punkty = algorytm_bresenhama(promien[0][0], promien[0][1], promien[1][0], promien[1][1])
+            sinogram[idx, promien_idx] = sum(
+                obraz[p[1], p[0]] for p in punkty if 0 <= p[0] < obraz.shape[1] and 0 <= p[1] < obraz.shape[0])
+    
     return sinogram
 
 
-def reverse_radon_transform(img_shape, sinogram, steps, span, num_rays, max_angle):
-    out_image = np.zeros(img_shape)
-    for idx in range(steps):
-        angle = idx * max_angle / steps
-        rays = get_parallel_rays(max(img_shape[0] // 2, img_shape[1] // 2) * np.sqrt(2),
-                                 (img_shape[0] // 2, img_shape[1] // 2), angle, span, num_rays)
-        for ray_idx, ray in enumerate(rays):
-            points = get_bresenham_points(ray[0][0], ray[1][0], ray[0][1], ray[1][1])
-            for p in points:
-                if 0 <= p[0] < img_shape[1] and 0 <= p[1] < img_shape[0]:
-                    out_image[p[1], p[0]] += sinogram[idx][ray_idx]
-    return normalize(out_image)
+def transforma_radona(wymiary_obrazu, sinogram, kroki, rozpietosc, liczba_promieni, max_kat):
+    obraz_wynikowy = np.zeros(wymiary_obrazu)
+
+    for idx in range(kroki):
+        kat = idx * (max_kat / kroki)
+        promienie = wyznaczenie_promieni(
+            np.hypot(wymiary_obrazu[0] // 2, wymiary_obrazu[1] // 2),
+            (wymiary_obrazu[0] // 2, wymiary_obrazu[1] // 2), kat, rozpietosc, liczba_promieni)
+        
+        for promien_idx, promien in enumerate(promienie):
+            punkty = algorytm_bresenhama(promien[0][0], promien[0][1], promien[1][0], promien[1][1])
+            
+            for p in punkty:
+                if 0 <= p[0] < wymiary_obrazu[1] and 0 <= p[1] < wymiary_obrazu[0]:
+                    obraz_wynikowy[p[1], p[0]] += sinogram[idx, promien_idx]
+    
+    return normalizacja(obraz_wynikowy)
 
 
-def normalize(img):
-    return (img - img.min()) / (img.max() - img.min())
+
+def normalizacja(obraz):
+    return (obraz - obraz.min()) / (obraz.max() - obraz.min())
 
 
-def create_kernel(size, kernel_type):
-    one_d = np.zeros(size, dtype=np.float64)
-    center = size // 2
-    for i in range(size):
-        if i == center:
-            one_d[i] = 1.0
-        elif i % 2 == 0:
-            one_d[i] = 0.0
-        else:
-            dist = i - center
-            base = (-4.0 / (math.pi ** 2)) / (dist ** 2)
-            if kernel_type == 'ramp':
-                one_d[i] = base
-            elif kernel_type == 'shepp-logan':
-                arg = math.pi * dist / (2 * center)
-                sinc = math.sin(arg) / arg if arg != 0 else 1.0
-                one_d[i] = base * sinc
-            elif kernel_type == 'hamming':
-                window = 0.54 - 0.46 * math.cos(2 * math.pi * i / (size - 1))
-                one_d[i] = base * window
-            elif kernel_type == 'hanning':
-                window = 0.5 * (1 - math.cos(2 * math.pi * i / (size - 1)))
-                one_d[i] = base * window
-            elif kernel_type == 'cosine':
-                window = math.cos(math.pi * dist / (2 * center))
-                one_d[i] = base * window
-            else:
-                raise ValueError("Niepoprawny typ kernela.")
-    return np.outer(one_d, one_d)
+
+def filter_sinogram(sinogram, typ_filtru='ram-lak'):
+    liczba_projekcji, liczba_detektorow = sinogram.shape
+
+    czestotliwosci = np.fft.fftfreq(liczba_detektorow).reshape(1, -1)
+    omega = 2 * np.pi * czestotliwosci
+
+    ram_lak = 2 * np.abs(czestotliwosci)
+
+    # Inne filtry jako modyfikacja Ram-Laka
+    if typ_filtru == 'ram-lak':
+        krzywa_filtru = ram_lak
+    elif typ_filtru == 'shepp-logan':
+        sinc = np.sinc(czestotliwosci / 2)
+        krzywa_filtru = ram_lak * sinc
+    elif typ_filtru == 'cosine':
+        krzywa_filtru = ram_lak * np.cos(np.pi * czestotliwosci / 2)
+    elif typ_filtru == 'hamming':
+        window = 0.54 + 0.46 * np.cos(omega)
+        krzywa_filtru = ram_lak * window
+    elif typ_filtru == 'hann':
+        window = 0.5 + 0.5 * np.cos(omega)
+        krzywa_filtru = ram_lak * window
+    else:
+        raise ValueError(f"Nieznany typ filtra: {typ_filtru}")
+
+    sino_czest = np.fft.fft(sinogram, axis=1)
+    sino_czest_filtrowany= sino_czest * krzywa_filtru
+    sinogram_filtrowany = np.real(np.fft.ifft(sino_czest_filtrowany, axis=1))
+
+    return sinogram_filtrowany
 
 
-def filter_sinogram(sinogram):
-    n_proj, n_detectors = sinogram.shape
-    filtered_sino = np.zeros_like(sinogram)
 
-    # Filtr Ram-Lak
-    freqs = np.fft.fftfreq(n_detectors).reshape(-1, 1)
-    ram_lak = 2 * np.abs(freqs)  # Filtr Ram-Lak
+def obliczenie_bledu(obraz1, obraz2):
+    return np.sqrt(np.mean(np.square(obraz1 - obraz2)))
 
-    sinogram_fft = np.fft.fft(sinogram, axis=0)
-    sinogram_filtered = np.real(np.fft.ifft(sinogram_fft * ram_lak, axis=0))
-
-    return sinogram_filtered
-
-
-def rmse(img1, img2):
-    return np.sqrt(np.mean(np.square(img1 - img2)))
 
 
 def main():
-    file_path = "shepp_logan.jpg"
-    image = load_image(file_path)
+    sciezka_pliku = "saddle_pe.jpg"
+    obraz, dane_dicom = wczytanie_obrazu(sciezka_pliku)
 
-    steps = 360
-    num_rays = 360
-    span = 180
-    max_angle = 180
+    kroki = 360
+    liczba_promieni = 360
+    rozpietosc = 180
+    max_kat = 180
 
-    sinogram = calculate_sinogram(image, steps, span, num_rays, max_angle)
-    kernel = create_kernel(351, 'hamming')
-    sinogram_filtered = filter_sinogram(sinogram)
+    sinogram = tworzenie_sinogramu(obraz, kroki, rozpietosc, liczba_promieni, max_kat)
+    sinogram_filtrowany = filter_sinogram(sinogram, "hann")
 
-    recon_image = reverse_radon_transform(image.shape, sinogram, steps, span, num_rays, max_angle)
-    recon_image_filtered = reverse_radon_transform(image.shape, sinogram_filtered, steps, span, num_rays, max_angle)
+    odtworzony_obraz = transforma_radona(obraz.shape, sinogram, kroki, rozpietosc, liczba_promieni, max_kat)
+    odtworzony_obraz_filtrowany = transforma_radona(obraz.shape, sinogram_filtrowany, kroki, rozpietosc, liczba_promieni, max_kat)
+
+    # Analiza statystyczna — obliczanie RMSE
+    blad_bez_filtru = obliczenie_bledu(obraz, odtworzony_obraz)
+    blad_z_filtrem = obliczenie_bledu(obraz, odtworzony_obraz_filtrowany)
+
+    print(f"RMSE bez filtra: {blad_bez_filtru:.4f}")
+    print(f"RMSE z filtrem: {blad_z_filtrem:.4f}")
 
     fig, axs = plt.subplots(1, 4, figsize=(20, 5))
-    axs[0].imshow(image, cmap='gray')
+    axs[0].imshow(obraz, cmap='gray')
     axs[0].set_title("Obraz wejściowy")
     axs[1].imshow(sinogram.T, cmap='gray', aspect='auto')
     axs[1].set_title("Sinogram")
-    axs[2].imshow(recon_image, cmap='gray')
+    axs[2].imshow(odtworzony_obraz, cmap='gray')
     axs[2].set_title("Rekonstrukcja bez filtra")
-    axs[3].imshow(recon_image_filtered, cmap='gray')
+    axs[3].imshow(odtworzony_obraz_filtrowany, cmap='gray')
     axs[3].set_title("Rekonstrukcja z filtrem")
     for ax in axs:
         ax.axis('off')

@@ -10,6 +10,7 @@ from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QPixmap, QImage, qRgb
 from PyQt6.QtWidgets import QDialog, QFormLayout, QLineEdit, QDialogButtonBox
 from funkcje import wczytaj_obraz, generuj_projekcje,rekonstrukcja_wlasna,save_dicom_image
+from dzialaj import wczytanie_obrazu, tworzenie_sinogramu, filter_sinogram, transforma_radona
 import numpy as np
 
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
@@ -28,7 +29,7 @@ def wczytaj_i_pokaz_obraz():
     )
 
     if sciezka:
-        obraz, _ = wczytaj_obraz(sciezka)
+        obraz, _ = wczytanie_obrazu(sciezka)
 
         if obraz is not None:
             print("Obraz wczytany poprawnie!")  # Debugowanie

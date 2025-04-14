@@ -1,1 +1,0 @@
-get_bresenham_points
