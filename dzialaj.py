@@ -1,23 +1,39 @@
 import copy
 import math
+import os
 import numpy as np
+from pydicom import FileDataset
 from scipy.signal import convolve2d
 from PIL import Image
 import matplotlib.pyplot as plt
 import pydicom
+import datetime
 
+def wczytanie_obrazu(sciezka, rozmiar_obrazu=(256, 256)):
 
-def wczytanie_obrazu(sciezka_pliku, rozmiar_obrazu=(256, 256)):
-    if sciezka_pliku.lower().endswith(".dcm"):
-        dane_dicom = pydicom.dcmread(sciezka_pliku)
-        obraz = dane_dicom.pixel_array.astype(np.float32)
-        obraz = (obraz - obraz.min()) / (obraz.max() - obraz.min())  # Normalizacja do [0,1]
-        return obraz, dane_dicom
+    ext = os.path.splitext(sciezka)[-1].lower()
+
+    if ext == '.dcm':
+        dicom = pydicom.dcmread(sciezka)
+        obraz = dicom.pixel_array.astype(np.float32)
+
+        # Normalizacja DICOM
+        obraz = obraz - np.min(obraz)
+        if np.max(obraz) != 0:
+            obraz = obraz / np.max(obraz)
+
+        # Konwersja do obrazu PIL, skalowanie, potem z powrotem do numpy
+        pil_img = Image.fromarray((obraz * 255).astype(np.uint8)).convert('L')
+        pil_img = pil_img.resize(rozmiar_obrazu, Image.Resampling.LANCZOS)
+        obraz = np.array(pil_img).astype(np.float32) / 255.0
+
     else:
-        obraz = Image.open(sciezka_pliku).convert('L')
-        obraz = obraz.resize(rozmiar_obrazu, Image.Resampling.LANCZOS)
-        return np.array(obraz) / 255.0, None
+        # Wczytanie JPG/PNG jako grayscale + skalowanie
+        pil_img = Image.open(sciezka).convert('L')
+        pil_img = pil_img.resize(rozmiar_obrazu, Image.Resampling.LANCZOS)
+        obraz = np.array(pil_img).astype(np.float32) / 255.0
 
+    return obraz, sciezka
 
 
 
@@ -98,23 +114,35 @@ def tworzenie_sinogramu(obraz, kroki, rozpietosc, liczba_promieni, max_kat):
     return sinogram
 
 
-def transforma_radona(wymiary_obrazu, sinogram, kroki, rozpietosc, liczba_promieni, max_kat):
+def transforma_radona(wymiary_obrazu, sinogram, kroki, rozpietosc, liczba_promieni, max_kat, zwroc_klatki=False):
     obraz_wynikowy = np.zeros(wymiary_obrazu)
+    klatki = [] if zwroc_klatki else None
 
     for idx in range(kroki):
         kat = idx * (max_kat / kroki)
         promienie = wyznaczenie_promieni(
             np.hypot(wymiary_obrazu[0] // 2, wymiary_obrazu[1] // 2),
-            (wymiary_obrazu[0] // 2, wymiary_obrazu[1] // 2), kat, rozpietosc, liczba_promieni)
-        
+            (wymiary_obrazu[0] // 2, wymiary_obrazu[1] // 2),
+            kat, rozpietosc, liczba_promieni
+        )
+
         for promien_idx, promien in enumerate(promienie):
             punkty = algorytm_bresenhama(promien[0][0], promien[0][1], promien[1][0], promien[1][1])
-            
+
             for p in punkty:
                 if 0 <= p[0] < wymiary_obrazu[1] and 0 <= p[1] < wymiary_obrazu[0]:
                     obraz_wynikowy[p[1], p[0]] += sinogram[idx, promien_idx]
-    
-    return normalizacja(obraz_wynikowy)
+
+        if klatki is not None:
+            klatki.append(np.copy(obraz_wynikowy))
+
+    obraz_wynikowy = normalizacja(obraz_wynikowy)
+
+    if klatki is not None:
+        klatki = [normalizacja(k) for k in klatki]
+        return obraz_wynikowy, klatki
+
+    return obraz_wynikowy
 
 
 
@@ -154,6 +182,58 @@ def filter_sinogram(sinogram, typ_filtru='ram-lak'):
 
     return sinogram_filtrowany
 
+def save_dicom_image(reconstructed_array, filename, patientname, patientID, patient_comments=None):
+    """
+    Funkcja zapisuje zrekonstruowany obraz jako plik DICOM.
+    - reconstructed_array: zrekonstruowany obraz do zapisu.
+    - filename: Ścieżka, w której zapisany zostanie plik DICOM.
+    - patientname: Imię pacjenta.
+    - patientID: ID pacjenta.
+    - patient_comments: Komentarz pacjenta (opcjonalne).
+    """
+    if reconstructed_array is None:
+        return None
+
+    # Tworzymy metadane DICOM
+    file_meta = pydicom.Dataset()
+    file_meta.MediaStorageSOPClassUID = pydicom.uid.SecondaryCaptureImageStorage
+    file_meta.MediaStorageSOPInstanceUID = pydicom.uid.generate_uid()
+    file_meta.ImplementationClassUID = pydicom.uid.PYDICOM_IMPLEMENTATION_UID
+
+    ds = FileDataset(filename, {}, file_meta=file_meta, preamble=b"\0" * 128)
+    dt = datetime.datetime.now()
+    ds.ContentDate = dt.strftime("%Y%m%d")
+    ds.ContentTime = dt.strftime("%H%M%S")
+    ds.Modality = "OT"  # Other (obraz medyczny "inny")
+    ds.PatientName = patientname
+    ds.PatientID = patientID
+    ds.StudyInstanceUID = pydicom.uid.generate_uid()
+    ds.SeriesInstanceUID = pydicom.uid.generate_uid()
+    ds.SOPInstanceUID = file_meta.MediaStorageSOPInstanceUID
+    ds.SOPClassUID = file_meta.MediaStorageSOPClassUID
+
+    # Jeśli komentarz pacjenta jest dostępny, dodajemy go do metadanych DICOM
+    if patient_comments:
+        ds.PatientComments = patient_comments
+
+    # Normalizacja i konwersja obrazu do uint8
+    image_array = (reconstructed_array - reconstructed_array.min()) / \
+                  (reconstructed_array.max() - reconstructed_array.min()) * 255
+    image_array = image_array.astype(np.uint8)
+
+    # Ustawienia dla obrazu
+    ds.Rows, ds.Columns = image_array.shape
+    ds.PhotometricInterpretation = "MONOCHROME2"
+    ds.SamplesPerPixel = 1
+    ds.BitsAllocated = 8
+    ds.BitsStored = 8
+    ds.HighBit = 7
+    ds.PixelRepresentation = 0
+    ds.PixelData = image_array.tobytes()
+
+    # Zapisz plik DICOM
+    ds.save_as(filename, write_like_original=False)
+    return filename
 
 
 def obliczenie_bledu(obraz1, obraz2):
