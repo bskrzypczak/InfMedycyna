@@ -20,6 +20,7 @@ import numpy as np
 from PIL import Image
 import matplotlib.pyplot as plt
 
+#zmienne globalne
 sinogram_label = None
 reconstructed_image_label = None
 zrekonstruowany_obraz = None
@@ -33,6 +34,7 @@ shared_slider_label = None
 sinogram_frames = []
 reconstruction_frames = []
 
+#wczytywanie pliku
 def wczytaj_i_pokaz_obraz():
     global obraz, input_image_frame
 
@@ -46,10 +48,10 @@ def wczytaj_i_pokaz_obraz():
         if obraz is not None:
             print("Obraz wczytany poprawnie!")
 
-            # upewnienie się, że obraz jest w zakresie 0-255
+            # zakres 0-255
             obraz_display = (obraz * 255).astype(np.uint8)
 
-            # Konwertowanie obrazu na QImage
+            # konwertowanie obrazu na QImage
             try:
                 height, width = obraz_display.shape
                 bytes_per_line = width
@@ -84,7 +86,7 @@ def wczytaj_i_pokaz_obraz():
             QMessageBox.critical(None, "Błąd", "Nie udało się wczytać obrazu.")
 
 
-
+#generowanie sinogramu do gui z animacja
 def generuj_sinogram():
     global obraz, sinogram, krok_alpha, rozpietosc, liczba_detektorow
     global chk_scan_animation, sinogram_frame, sinogram_label
@@ -96,14 +98,14 @@ def generuj_sinogram():
 
     if obraz is not None:
         try:
-            # Wyciąganie wartości z QSpinBox, jeśli trzeba
+            # QspinBox
             krok_alpha_val = krok_alpha.value() if isinstance(krok_alpha, QSpinBox) else krok_alpha
             rozpietosc_val = rozpietosc.value() if isinstance(rozpietosc, QSpinBox) else rozpietosc
             liczba_detektorow_val = liczba_detektorow.value() if isinstance(liczba_detektorow, QSpinBox) else liczba_detektorow
 
             kroki = int(180 / krok_alpha_val)
 
-            # Tworzenie sinogramu z dzialaj.py
+            # Tworzenie sinogramu z uzyciem funkcji z dzialaj.py
             sinogram = tworzenie_sinogramu(
                 obraz=obraz,
                 kroki=kroki,
@@ -115,10 +117,10 @@ def generuj_sinogram():
             if wybrany_filtr != "brak":
                 sinogram = filter_sinogram(sinogram, typ_filtru=wybrany_filtr)
 
-            # Tylko do wyświetlenia
+            #do wyswietlenia w qt6
             sinogram_display = np.clip(sinogram, 0, np.max(sinogram))
             sinogram_display = (sinogram_display / np.max(sinogram_display) * 255).astype(np.uint8)
-            sinogram_display = sinogram_display.T  # żeby był poziomo
+            sinogram_display = sinogram_display.T
 
             layout = sinogram_frame.layout()
             if layout is None:
@@ -130,7 +132,7 @@ def generuj_sinogram():
                 sinogram_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 sinogram_label.setMaximumSize(sinogram_frame.size())
                 layout.addWidget(sinogram_label)
-
+            #czy robimy animacje
             if chk_scan_animation.isChecked():
                 for i in range(1, sinogram_display.shape[1] + 1):
                     current_sinogram = sinogram_display[:, :i]
@@ -162,6 +164,7 @@ def generuj_sinogram():
     else:
         QMessageBox.warning(None, "Błąd", "Najpierw wczytaj obraz przed generowaniem sinogramu.")
 
+#rekonstrukcja obrazu z sinogramu
 def rekonstruuj_obraz():
     global sinogram, obraz, krok_alpha, liczba_detektorow, rozpietosc
     global reconstructed_image_frame, reconstructed_image_label, zrekonstruowany_obraz,shared_slider_label,shared_slider
@@ -178,7 +181,7 @@ def rekonstruuj_obraz():
         rozpietosc_val = rozpietosc.value() if isinstance(rozpietosc, QSpinBox) else rozpietosc
 
         liczba_katow = int(180 / krok_alpha_val)
-
+        #czy robimy animacje
         if chk_scan_animation.isChecked():
             animuj_rekonstrukcje()
             return
@@ -192,7 +195,7 @@ def rekonstruuj_obraz():
             180
         )
 
-        zrekonstruowany_obraz = reconstructed  # zapisz do globalnej zmiennej
+        zrekonstruowany_obraz = reconstructed  # doz miennej globalnej
 
         reconstructed = np.clip(reconstructed, 0, 1)
         reconstructed_display = (reconstructed * 255).astype(np.uint8)
@@ -225,7 +228,7 @@ def rekonstruuj_obraz():
     except Exception as e:
         print(f"Błąd przy rekonstrukcji: {e}")
         QMessageBox.critical(None, "Błąd", "Wystąpił błąd podczas rekonstrukcji obrazu.")
-
+#odzielna rekonstrukcja z animacja
 def animuj_rekonstrukcje():
     global sinogram, obraz, krok_alpha, liczba_detektorow, rozpietosc
     global reconstructed_image_frame, reconstructed_image_label, zrekonstruowany_obraz
@@ -239,7 +242,7 @@ def animuj_rekonstrukcje():
         liczba_katow = int(180 / krok_alpha_val)
         shape_obraz = obraz.shape
 
-        # Wywołanie transforma_radona z zapisem wszystkich etapów
+        # Wywołanie transforma_radona ale z zapisywaniem klatek
         print("Generowanie klatek rekonstrukcji...")
         zrekonstruowany_obraz, klatki = transforma_radona(
             shape_obraz,
@@ -253,7 +256,7 @@ def animuj_rekonstrukcje():
 
         print(f"Wygenerowano {len(klatki)} klatek. Rozpoczynanie animacji...")
 
-        # Ustawienie layoutu i QLabel jeśli potrzeba
+
         layout = reconstructed_image_frame.layout()
         if layout is None:
             layout = QVBoxLayout()
@@ -267,7 +270,7 @@ def animuj_rekonstrukcje():
         else:
             reconstructed_image_label.clear()
 
-        # Wyświetlanie klatek
+        # Wyświetlanie zapisanych klatek
         for frame in klatki:
             frame_display = (frame * 255).astype(np.uint8)
             height, width = frame_display.shape
@@ -283,7 +286,7 @@ def animuj_rekonstrukcje():
             time.sleep(0.03)
 
         print("Animacja zakończona.")
-        # Synchronizacja z sinogramem
+        # Synchronizacja z sinogramem -> suwak
         if len(reconstruction_frames) > 0 and len(sinogram_frames) == len(reconstruction_frames):
             shared_slider.setRange(0, len(reconstruction_frames) - 1)
             shared_slider.setValue(len(reconstruction_frames) - 1)
@@ -302,7 +305,7 @@ def animuj_rekonstrukcje():
         print(f"Błąd przy animacji z bufora: {e}")
         QMessageBox.critical(None, "Błąd", "Wystąpił błąd podczas animacji rekonstrukcji.")
 
-
+#zaopisywanie ddo dicom
 def save_dicom_file():
     global zrekonstruowany_obraz, imie, nazwisko, pesel, komentarz
 
@@ -316,7 +319,7 @@ def save_dicom_file():
         if not filename:
             return
 
-        # Sprawdzenie danych pacjenta
+        # Sprawdzenie danych
         if not imie or not nazwisko or not pesel:
             QMessageBox.warning(None, "Błąd", "Dane pacjenta muszą być wprowadzone.")
             return
@@ -346,9 +349,9 @@ def save_dicom_file():
         QMessageBox.critical(None, "Błąd", "Wystąpił błąd podczas zapisu pliku DICOM.")
 
 
-
+#okno do wpisywania danyhc pacjenta
 def pokaz_okno_danych_pacjenta():
-    global imie, nazwisko, pesel, komentarz  # Używamy zmiennych globalnych
+    global imie, nazwisko, pesel, komentarz
 
     dialog = QDialog()
     dialog.setStyleSheet("background-color: #2A2A2A; color: white; font-size: 14px;")
@@ -356,7 +359,7 @@ def pokaz_okno_danych_pacjenta():
 
     layout = QFormLayout()
 
-    # Wstawiamy obecne dane pacjenta do formularza
+    # obecne dane pacjenta do formularza
     imie_edit = QLineEdit(imie)
     nazwisko_edit = QLineEdit(nazwisko)
     pesel_edit = QLineEdit(pesel)
@@ -390,9 +393,9 @@ def pokaz_okno_danych_pacjenta():
 
     dialog.exec()
 
-
+#zaouisanei danych
 def zapisz_dane(new_imie, new_nazwisko, new_pesel, new_komentarz, dialog):
-    global imie, nazwisko, pesel, komentarz  # Używamy zmiennych globalnych
+    global imie, nazwisko, pesel, komentarz
 
     # Zaktualizowanie danych pacjenta
     imie = new_imie
@@ -411,7 +414,7 @@ def zapisz_dane(new_imie, new_nazwisko, new_pesel, new_komentarz, dialog):
 
 
 
-
+#ustawnienia tomografu -> okno
 def pokaz_okno_ustawien_tomografu():
     global krok_alpha, rozpietosc, liczba_detektorow  # Używamy zmiennych globalnych
 
@@ -421,7 +424,7 @@ def pokaz_okno_ustawien_tomografu():
 
     layout = QFormLayout()
 
-    # Tworzymy QSpinBox dla ustawień tomografu
+
     krok_alpha = QSpinBox()
     krok_alpha.setRange(1, 360)
     krok_alpha.setValue(1)
@@ -434,12 +437,12 @@ def pokaz_okno_ustawien_tomografu():
     rozpietosc.setRange(1, 360)
     rozpietosc.setValue(180)
 
-    # Dodanie do layoutu
+
     layout.addRow("Krok Δα:", krok_alpha)
     layout.addRow("Liczba detektorów:", liczba_detektorow)
     layout.addRow("Rozpiętość układu:", rozpietosc)
 
-    # Przycisk OK i Cancel
+
     buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
     buttons.setStyleSheet("""
     QDialogButtonBox QPushButton {
@@ -453,7 +456,7 @@ def pokaz_okno_ustawien_tomografu():
         background-color: #168FFF;
     }
     """)
-    # Zapisz dane po kliknięciu OK
+    # zapisz  po kliknięciu OK
     buttons.accepted.connect(
         lambda: zapisz_ustawienia(krok_alpha.value(), liczba_detektorow.value(), rozpietosc.value(), dialog))
     buttons.rejected.connect(dialog.reject)
@@ -472,7 +475,7 @@ def zapisz_ustawienia(new_krok_alpha, new_liczba_detektorow, new_rozpietosc, dia
     liczba_detektorow = new_liczba_detektorow
     rozpietosc = new_rozpietosc
 
-    # Upewnij się, że zmienne tomograph_settings_labels są zainicjalizowane
+
     if not tomograph_settings_labels:
         tomograph_settings_labels = {
             "Krok Δα": QLabel(f"Krok Δα: {krok_alpha}"),
@@ -486,7 +489,7 @@ def zapisz_ustawienia(new_krok_alpha, new_liczba_detektorow, new_rozpietosc, dia
     tomograph_settings_labels["Rozpiętość układu"].setText(f"Rozpiętość układu: {rozpietosc}")
 
     dialog.accept()
-
+#okno pokazujace nasz wynik zapisany w dicom/pokazanie ze metadane sa zapisywane
 def pokaz_zapisany_dicom():
     global saved_dicom_path, dicom_viewer_window
 
@@ -522,12 +525,12 @@ def pokaz_zapisany_dicom():
         data = ds.get("ContentDate", "Brak daty")
         czas = ds.get("ContentTime", "Brak czasu")
 
-        # Formatowanie daty i czasu jeśli są dostępne
+        # data i czas
         if data != "Brak daty" and len(data) == 8:
             data = f"{data[:4]}-{data[4:6]}-{data[6:]}"
         if czas != "Brak czasu" and len(czas) >= 6:
             czas = f"{czas[:2]}:{czas[2:4]}:{czas[4:6]}"
-
+        #dane
         meta_label.setText(
             f"Pacjent: {ds.PatientName}\n"
             f"PESEL (Patient ID): {ds.PatientID}\n"
@@ -543,7 +546,7 @@ def pokaz_zapisany_dicom():
     except Exception as e:
         QMessageBox.critical(None, "Błąd", f"Nie udało się otworzyć pliku:\n{e}")
 
-# Zmienna do przechowywania danych pacjenta
+# globalne dane pacjenta
 imie = ""
 nazwisko = ""
 pesel = ""
@@ -553,7 +556,7 @@ komentarz = ""
 patient_info_labels = {}
 tomograph_settings_labels ={}
 
-#ustawienia tomografu
+#ustawienia tomografu startowe
 krok_alpha = 1
 liczba_detektorow = 256
 rozpietosc = 180
@@ -577,7 +580,7 @@ def main():
     # Layout pionowy
     layout = QVBoxLayout()
 
-    # Żeby przycisk był w lewym górnym rogu, zerujemy marginesy i ustalamy wyrównanie do góry
+
     layout.setContentsMargins(0, 0, 0, 0)
     layout.setSpacing(0)
     layout.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -594,7 +597,7 @@ def main():
     line1.setStyleSheet("color: #555;")
     layout.addWidget(line1)
 
-    # Layout poziomy dla górnych przycisków
+    # gorne przyciski
     top_buttons_layout = QHBoxLayout()
     top_buttons_layout.setContentsMargins(10, 10, 10, 0)
     top_buttons_layout.setSpacing(10)
@@ -664,11 +667,11 @@ QPushButton:hover {
         background-color: #168FFF;
     }
     """)
-    btn_save_dicom.clicked.connect(save_dicom_file)  # Wywołanie funkcji zapisu DICOM
+    btn_save_dicom.clicked.connect(save_dicom_file)
     top_buttons_layout.addWidget(btn_save_dicom)
     layout.addLayout(top_buttons_layout)
 
-    # Layout poziomy: checkbox + combo filtr w jednej linii
+    # Layout poziomy: checkbox + combo filtr
     filters_and_options_layout = QHBoxLayout()
     filters_and_options_layout.setContentsMargins(10, 5, 10, 0)
     filters_and_options_layout.setSpacing(20)
@@ -766,7 +769,7 @@ QPushButton:hover {
     shared_slider_label.setFixedWidth(80)
 
     shared_slider = QSlider(Qt.Orientation.Horizontal)
-    shared_slider.setVisible(False)  # Pokaże się dopiero po animacji
+    shared_slider.setVisible(False)
     shared_slider_label.setVisible(False)
     shared_slider.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
     shared_slider.setStyleSheet("""
@@ -809,7 +812,7 @@ QPushButton:hover {
 
 
 
-    # --- Ustawienia tomografu - etykiety dynamiczne ---
+    # dynamicze etykiety ustawien tomografu
     tomograph_settings_layout = QVBoxLayout()
     tomograph_settings_labels = {
         "Krok Δα": QLabel(f"Krok Δα: {krok_alpha}"),
@@ -817,16 +820,16 @@ QPushButton:hover {
         "Rozpiętość układu": QLabel(f"Rozpiętość układu: {rozpietosc}")
     }
 
-    # Dodajemy etykiety do layoutu, aby wyświetlić ustawienia tomografu
+
     for label in tomograph_settings_labels.values():
         label.setStyleSheet("color: white; font-size: 13px;")
         tomograph_settings_layout.addWidget(label)
 
-    # Tworzymy osobny widget do wyświetlenia ustawień tomografu
+
     tomograph_widget = QWidget()
     tomograph_widget.setLayout(tomograph_settings_layout)
 
-    # --- Ramki na dane pacjenta ---
+    # Ramki na dane pacjenta
     patient_data_layout = QVBoxLayout()
     patient_info_labels = {
         "Imię": QLabel(f"Imię: {imie}"),
@@ -839,25 +842,25 @@ QPushButton:hover {
         label.setStyleSheet("color: white; font-size: 13px;")
         patient_data_layout.addWidget(label)
 
-    # Tworzymy osobny widget do wyświetlenia danych pacjenta
+
     patient_widget = QWidget()
     patient_widget.setLayout(patient_data_layout)
 
-    # Layout dla obu sekcji: dane pacjenta i ustawienia tomografu
+
     info_frames_layout = QHBoxLayout()
     info_frames_layout.setContentsMargins(10, 10, 10, 10)
     info_frames_layout.setSpacing(20)
 
-    # Dodajemy widgety do layoutu
+
     info_frames_layout.addWidget(patient_widget)
     info_frames_layout.addWidget(tomograph_widget)
 
-    # Na koniec dodajemy info_frames_layout do głównego layoutu
+
     layout.addLayout(info_frames_layout)
 
 
 
-    # Przyciski dolne: "Zmień dane pacjenta" i "Zmień ustawienia tomografu"
+    # Przyciski dolne
     bottom_buttons_layout = QHBoxLayout()
     bottom_buttons_layout.setContentsMargins(10, 20, 10, 10)
     bottom_buttons_layout.setSpacing(10)
@@ -918,7 +921,7 @@ QPushButton:hover {
     btn_show_saved_dicom.setVisible(False)
     btn_show_saved_dicom.clicked.connect(pokaz_zapisany_dicom)
     dicom_button_wrapper = QVBoxLayout()
-    dicom_button_wrapper.setContentsMargins(0, 30, 0, 0)  # 15px górnego marginesu
+    dicom_button_wrapper.setContentsMargins(0, 30, 0, 0)
     dicom_button_wrapper.addWidget(btn_show_saved_dicom, alignment=Qt.AlignmentFlag.AlignHCenter)
     layout.addLayout(dicom_button_wrapper)
 
